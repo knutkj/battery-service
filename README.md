@@ -1,1 +1,3 @@
-# battery-service
+# README
+
+See `docs/poc.md`.
