@@ -1,0 +1,7 @@
+{
+  "printWidth": 80,
+  "plugins": ["prettier-plugin-jsdoc"],
+  "jsdocPrintWidth": 80,
+  "jsdocLineWrappingStyle": "greedy",
+  "proseWrap": "always"
+}
