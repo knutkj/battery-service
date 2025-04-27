@@ -41,7 +41,7 @@ Each `.zlf` file consists of:
 
 - A **2048-byte static header** containing session metadata.
 - A sequence of **frames**, each structured as:
-  - 8-byte timestamp (FILETIME ticks)
+  - 8 bytes: Timestamp (FILETIME ticks, masked to 62 bits).
   - 1-byte control (direction + session ID)
   - 4-byte little-endian payload length
   - N-byte captured payload
@@ -146,7 +146,8 @@ returning.
 
 2. **Parse header fields:**
 
-   - **Timestamp** (8 bytes): Stored in Windows FILETIME / .NET ticks format.
+   - **Timestamp** (8 bytes): Stored in Windows FILETIME ticks format, **after
+     masking out high-order bits (only 62 bits represent time)**.
    - **Control byte** (1 byte):
      - Bit 7 = direction (incoming = 0, outgoing = 1)
      - Bits 0-6 = session ID (usually 0)

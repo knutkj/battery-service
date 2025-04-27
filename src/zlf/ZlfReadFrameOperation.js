@@ -31,7 +31,7 @@ const FRAME_HEADER_SIZE = 13;
  * In case of end-of-file with an incomplete frame, recovery logic must be
  * handled by the caller.
  */
-export class FrameOperation {
+export default class ZlfReadFrameOperation {
   /**
    * Attempts to read exactly one complete ZLF frame from the stream and receive
    * buffer.
