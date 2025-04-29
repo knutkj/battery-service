@@ -96,3 +96,15 @@ Each frame records exactly one Z-Wave RF capture event.
 - No additional file-level markers exist between frames.
 - Frames are self-contained: no external synchronization needed if file is read
   sequentially.
+
+## See
+
+- **[ZLF Command Frame](docs/specs/zlf-command.md):** Specifies the structure of
+  a Command Frame payload, representing control messages between the Zniffer
+  software and device, identified by function types and optional parameters.
+- **[ZLF Data Frame](docs/specs/zlf-data.md):** Specifies the structure of a
+  Data Frame payload, which includes Zniffer capture metadata (channel, speed,
+  region, RSSI) and the raw Z-Wave MPDU extracted from the air.
+- **[ZlfReader](docs/specs/ZlfReader.md):** Describes the ZlfReader utility
+  class that provides incremental, asynchronous reading of full frames from .zlf
+  files, with position tracking and recovery capabilities.
