@@ -14,12 +14,14 @@ async function main() {
   try {
     // Read exactly one full recognizable message.
     let buffer = null;
+    let time = "849";
+    const predicate = predicateFactory(time);
     do {
       console.log("Reading chunk ...");
       const res = await op.run(stream, receiveBuffer);
       receiveBuffer = res.receiveBuffer;
       buffer = res.output;
-    } while (!isDataFrame(buffer));
+    } while (predicate(buffer));
 
     if (buffer) {
       console.log("Read one ZLF message (hex):");
@@ -27,7 +29,7 @@ async function main() {
       const frame = ZlfFrame.fromBuffer(buffer);
       console.log(frame);
       console.log(frame.payload.toString("hex"));
-      console.log(ZlfDataFrame.fromBuffer(frame));
+      console.log(ZlfDataFrame.fromFrame(frame));
     } else {
       console.log("No complete message available in log.zlf");
     }
@@ -41,6 +43,28 @@ main().catch((err) => {
   console.error("Error reading message:", err);
   process.exit(1);
 });
+
+function predicateFactory(time) {
+  console.log(`Will skip data frames until with time "${time}".`);
+  return function predicate(buffer) {
+    if (!isDataFrame(buffer)) {
+      console.log("Skipping since not a data frame.");
+      return true;
+    }
+
+    if (time) {
+      const curTime = ZlfFrame.fromBuffer(buffer).timestamp.toISOString();
+      const match = curTime.indexOf(time) !== -1;
+      console.log({ curTime, time, match });
+      if (!match) {
+        console.log(`Skipping data frame with time "${curTime}".`);
+        return true;
+      }
+    }
+
+    return false;
+  };
+}
 
 /**
  * Identifies the command type from a Command frame payload.

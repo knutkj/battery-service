@@ -1,98 +1,41 @@
-import zlfFrameType from "./zlfFrameType.js";
-
 export default class ZlfDataFrame {
   /**
-   * Creates a ZlfDataFrame instance from a ZlfFrame.
+   * Parses a ZLF data frame.
    *
-   * @param {ZlfFrame} frame - The parsed ZlfFrame.
-   * @returns {ZlfDataFrame}
+   * @param {object} frame - The ZlfFrame instance returned by
+   *   ZlfFrame.fromBuffer.
+   * @returns {object} An object with fields ch, speed, rssi, home, src, dst,
+   *   and payload.
    */
-  static fromBuffer(frame) {
+  static fromFrame(frame) {
     const payload = frame.payload;
-
-    if (!payload || payload.length < 6) {
+    if (!Buffer.isBuffer(payload) || payload.length < 19) {
       throw new Error("Invalid ZLF Data Frame payload length.");
     }
 
-    // Extract information from payload
-    const frameType = zlfFrameType(payload);
-
-    if (frameType !== "Data") {
-      // ZnifferFrameType.Data
-      throw new Error("Payload is not a Data frame.");
-    }
-
-    const channel = payload[3] >>> 5;
-    const speed = payload[3] & 0b11111;
-    const region = payload[4];
-    const rssiRaw = payload[5];
-
-    const mpduOffset = 9;
-    const checksumLength = speed >= 2 ? 2 : 1;
-    const checksum = payload.readUIntBE(
-      payload.length - checksumLength,
-      checksumLength,
-    );
-
-    const payloadWithoutMeta = payload.subarray(
-      mpduOffset,
-      payload.length - checksumLength,
-    );
-
-    // Home ID (first 4 bytes)
-    const homeId = payloadWithoutMeta.readUInt32BE(0);
-
-    // Source and Destination IDs
-    const sourceNodeId = payloadWithoutMeta[4];
-    const destinationNodeId = payloadWithoutMeta[5];
-
-    // Calculate checksum
-    const expectedChecksum =
-      checksumLength === 1
-        ? computeChecksumXOR(payloadWithoutMeta)
-        : CRC16_CCITT(payloadWithoutMeta);
-
-    const checksumOK = checksum === expectedChecksum;
-
-    return {
-      timestamp: frame.timestamp,
-      direction: frame.direction,
-      session: frame.session,
-      frameType: "Data",
-      channel,
-      speed,
-      region,
-      rssi: rssiRaw,
-      homeId,
-      sourceNodeId,
-      destinationNodeId,
-      payload: payloadWithoutMeta,
-      checksumOK,
+    // Byte 4 holds channel (bits 5–7) and speed code (bits 0–4)
+    const ctl = payload[4];
+    const ch = ctl >>> 5;
+    const rateCode = ctl & 0b00011111;
+    const speedMap = {
+      0: "9K6",
+      1: "40K",
+      2: "100K",
     };
-  }
-}
+    const speed = speedMap[rateCode] ?? "";
 
-// Dummy checksum functions for completeness:
-function computeChecksumXOR(buffer) {
-  let checksum = 0;
-  for (const byte of buffer) {
-    checksum ^= byte;
-  }
-  return checksum;
-}
+    // RSSI is at byte 6
+    const rssi = payload[6];
 
-function CRC16_CCITT(buffer) {
-  let crc = 0x1d0f;
-  for (const byte of buffer) {
-    crc ^= byte << 8;
-    for (let i = 0; i < 8; i++) {
-      if (crc & 0x8000) {
-        crc = (crc << 1) ^ 0x1021;
-      } else {
-        crc <<= 1;
-      }
-      crc &= 0xffff;
-    }
+    // Home ID is four bytes at offsets 10–13
+    const home = payload.slice(10, 14).toString("hex").toUpperCase();
+
+    // Source node is at offset 14
+    const src = payload[14];
+
+    // Destination node is at offset 18
+    const dst = payload[18];
+
+    return { ch, speed, rssi, home, src, dst, payload };
   }
-  return crc;
 }
