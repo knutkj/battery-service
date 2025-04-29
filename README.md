@@ -7,7 +7,6 @@ See [`docs/project/poc.md`](/docs/project/poc.md) for now.
 ## Specifications
 
 - **Z-Wave:**
-
   - [Z-Wave Log File (ZLF)](docs/specs/zlf.md): Defines the binary structure of
     .zlf files, including a static 2048-byte header and a sequence of
     timestamped frames containing opaque payloads.
@@ -17,7 +16,6 @@ See [`docs/project/poc.md`](/docs/project/poc.md) for now.
     - [ZLF Data Frame](docs/specs/zlf-data.md): Specifies the structure of a
       Data Frame payload, which includes Zniffer capture metadata (channel,
       speed, region, RSSI) and the raw Z-Wave MPDU extracted from the air.
-
 - **Code:**
   - [ZlfReader](docs/specs/ZlfReader.md): Describes the ZlfReader utility class
     that provides incremental, asynchronous reading of full frames from .zlf
