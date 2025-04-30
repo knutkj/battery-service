@@ -23,8 +23,9 @@ represent the same format.
 ## 1. Header Section
 
 - **Size:** 2048 bytes (fixed).
-- **Contents:** Session metadata (Zniffer tool version, device info, RF region,
-  start timestamp, etc.).
+- **Contents:** Session metadata (Zniffer tool version, firmware version, RF
+  region, controller and port details, timestamps, frequency, trace comments,
+  etc.).
 - **Parsing:** Application-specific; frame readers **MUST skip** the first 2048
   bytes without processing.
 
@@ -61,15 +62,17 @@ Each frame records exactly one Z-Wave RF capture event.
 
 ### Payload Length
 
-- **Endianess:** Little-endian (LE32).
+- **Endianness:** Little-endian (LE32).
 - **Meaning:** Exact size of payload bytes immediately following the length
   field.
 
 ### Payload
 
-- **Content:** Opaque binary blob containing frame-specific capture metadata and
-  RF packet bytes.
-- **Interpretation:** Application-specific.
+- **Content:** Binary blob structured by frame type:
+  - Command Frame (controller traffic)
+  - Data Frame (captured Z-Wave packet)
+- **Interpretation:** See [ZLF Command Frame](zlf-command.md) and
+  [ZLF Data Frame](zlf-data.md) for payload decoding.
 
 ### Trailing Marker
 
@@ -78,16 +81,26 @@ Each frame records exactly one Z-Wave RF capture event.
 - **Action:** Always read, but **no semantic meaning** defined.  
   **Ignored** during payload extraction.
 
+## 3. Frame Types
+
+There are two principal ZLF payload types:
+
+1. **ZLF Command Frame**: Host ↔ controller communication (e.g., serial
+   commands)
+2. **ZLF Data Frame**: RF capture from Z-Wave network (contains physical +
+   protocol layer info)
+
+See respective specs for format and field decoding.
+
 ## Reading Frames (Processing Logic)
 
 1. **Skip 2048-byte header.**
 2. **Read frame header:**
-   - 8 bytes timestamp
-   - 1 byte control
-   - 4 bytes payload length
-3. **Read payload:**
-   - N bytes (payload length from step 2)
-4. **Read trailing marker:** 1 byte
+   - 8 bytes timestamp.
+   - 1 byte control.
+   - 4 bytes payload length.
+3. **Read payload:** N bytes (payload length from step 2).
+4. **Read trailing marker:** 1 byte.
 5. **Frame complete.** Repeat for next frame.
 
 ## Guarantees
@@ -97,14 +110,19 @@ Each frame records exactly one Z-Wave RF capture event.
 - Frames are self-contained: no external synchronization needed if file is read
   sequentially.
 
+## Versioning and Compatibility
+
+- Zniffer logs are forward-compatible where older tools may ignore newer fields.
+- ZLF, ZWLF are structurally equivalent.
+- Older formats (.ZBF, .ZNF) require file converter tool bundled with Zniffer.
+
 ## See
 
-- **[ZLF Command Frame](zlf-command.md):** Specifies the structure of a Command
-  Frame payload, representing control messages between the Zniffer software and
-  device, identified by function types and optional parameters.
-- **[ZLF Data Frame](zlf-data.md):** Specifies the structure of a Data Frame
-  payload, which includes Zniffer capture metadata (channel, speed, region,
-  RSSI) and the raw Z-Wave MPDU extracted from the air.
-- **[ZlfReader](ZlfReader.md):** Describes the ZlfReader utility class that
-  provides incremental, asynchronous reading of full frames from .zlf files,
-  with position tracking and recovery capabilities.
+- **[ZLF Command Frame](zlf-command.md):** Structure of controller-originating
+  command payloads.
+- **[ZLF Data Frame](zlf-data.md):** Structure of RF-captured Z-Wave frame
+  payloads.
+- **[ZlfReader](ZlfReader.md):** Utility class for reading ZLF frame-by-frame
+  asynchronously.
+- **INS10249 – Z-Wave Zniffer User Guide:** Comprehensive technical manual for
+  the Zniffer tool, GUI and trace handling.
