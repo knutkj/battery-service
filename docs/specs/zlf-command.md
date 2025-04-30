@@ -2,68 +2,70 @@
 
 ## Overview
 
-A **ZLF Command Frame** is a type of payload found in `.zlf` files, as described
-in the [ZLF Specification](../zlf.md). These frames represent communication from
-the Zniffer **software to the hardware interface** or vice versa. They are used
-for configuring, controlling, or querying the Zniffer capture device and do not
-represent Z-Wave RF traffic.
+A **ZLF Command Frame** is a payload type found in `.zlf` and `.zwlf` files as
+defined in the [ZLF Specification](zlf.md). These frames represent **control and
+configuration communication between the Zniffer software and the hardware
+capture device** (e.g., USB sniffer, WSTK board). Command frames are not related
+to actual Z-Wave RF communication and are used internally for operations like
+setting frequency, starting/stopping capture, or retrieving device information.
 
-> Command Frames are typically not shown in the Zniffer UI unless the “All Frame
-> Types” view is enabled.
+> 🔍 Command frames are only visible in the Zniffer UI if “All Frame Types” is
+> enabled.
 
-## Payload Structure
+## Identification
+
+| Field            | Offset | Value  | Description                            |
+| ---------------- | ------ | ------ | -------------------------------------- |
+| **Message Type** | 0      | `0x23` | Constant identifier for Command Frames |
+
+## Frame Format
 
 | Field             | Offset | Size     | Description                                |
 | ----------------- | ------ | -------- | ------------------------------------------ |
-| **Message Type**  | 0      | 1 byte   | Constant `0x23` = Command Frame identifier |
+| **Message Type**  | 0      | 1 byte   | `0x23` fixed value                         |
 | **Function Type** | 1      | 1 byte   | Identifies the specific command or request |
 | **Length**        | 2      | 1 byte   | Number of following bytes in payload       |
-| **Payload**       | 3+     | Variable | Optional, meaning depends on Function Type |
+| **Payload**       | 3+     | variable | Optional parameters (function-specific)    |
 
-### Message Type (`0x23`)
+### Function Types
 
-- Indicates this frame is a **Command Frame**.
-- Always at byte offset `0`.
+Known function types (from Zniffer v4+) include:
 
-### Function Type
+| Code   | Name                     | Description                                         |
+| ------ | ------------------------ | --------------------------------------------------- |
+| `0x01` | `GetVersion`             | Query firmware version of the Zniffer device        |
+| `0x02` | `SetFrequency`           | Set RF frequency or region                          |
+| `0x03` | `GetFrequencies`         | Get list of supported frequency codes               |
+| `0x04` | `Start`                  | Begin RF capture                                    |
+| `0x05` | `Stop`                   | Stop RF capture                                     |
+| `0x06` | `SetLRChannelConfig`     | Configure Long-Range channel settings               |
+| `0x07` | `GetLRChannelConfigs`    | Retrieve available Long-Range channel configs       |
+| `0x08` | `GetLRRegions`           | Retrieve info about Long-Range regions              |
+| `0x0E` | `SetBaudRate`            | Change the serial communication baud rate           |
+| `0x13` | `GetFrequencyInfo`       | Get current frequency, region, and channel info     |
+| `0x14` | `GetLRChannelConfigInfo` | Detailed info for selected LR channel configuration |
 
-Specifies the operation. Values known from Zniffer v4+ include:
+Additional function types may be added by future Zniffer versions. Unknown codes
+should not result in a decoding failure.
 
-| Code   | Command Name             | Description                            |
-| ------ | ------------------------ | -------------------------------------- |
-| `0x01` | `GetVersion`             | Request firmware version from device.  |
-| `0x02` | `SetFrequency`           | Change RF frequency for capture.       |
-| `0x03` | `GetFrequencies`         | Request list of supported frequencies. |
-| `0x04` | `Start`                  | Start capture session.                 |
-| `0x05` | `Stop`                   | Stop capture session.                  |
-| `0x06` | `SetLRChannelConfig`     | Configure long-range channel settings. |
-| `0x07` | `GetLRChannelConfigs`    | Retrieve available long-range configs. |
-| `0x08` | `GetLRRegions`           | Request LR region info.                |
-| `0x0E` | `SetBaudRate`            | Adjust serial communication speed.     |
-| `0x13` | `GetFrequencyInfo`       | Query current frequency and region.    |
-| `0x14` | `GetLRChannelConfigInfo` | Fetch extended config for LR channel.  |
+## Payload Details
 
-Other codes may exist and should be preserved when reading unknown values.
+- **Length field** at byte offset 2 must match the number of bytes in the
+  command payload that follow.
+- Most command frames have small or empty payloads (e.g., `Start`, `Stop` have
+  `Length = 0`).
+- Some (like `SetFrequency`) use 1-byte payloads to select a region or
+  frequency.
 
-### Length
+### Example: SetFrequency
 
-- Indicates how many bytes of actual command payload follow.
-- Starts at byte offset `3`.
-- **MUST match** the size of the trailing payload for successful parsing.
+Payload example to change region:
 
-### Payload
+```plaintext
+0x23 0x02 0x01 0x02   // SetFrequency command, EU region (code 0x02)
+```
 
-- Contents are **function-specific**.
-- Many commands (like `Start`/`Stop`) carry no payload (`Length = 0`).
-- Others (e.g., `SetFrequency`) carry values such as region or channel.
-
-Examples:
-
-- `SetFrequency` payload might be:  
-  `0x02` → Select EU frequency  
-  `0x00` → Select US frequency
-
-## Parsing Strategy
+## Parsing Strategy (Pseudocode)
 
 ```ts
 if (payload[0] !== 0x23) throw Error("Not a Command Frame");
@@ -73,22 +75,19 @@ const length = payload[2];
 const data = payload.slice(3, 3 + length);
 ```
 
-- Unknown `funcType` values are valid.
-- Command frames should not be interpreted as Z-Wave traffic.
+## Notes
 
-## Practical Notes
-
-- Appears when using PC Controller features like port detection, frequency
-  switching, etc.
-- May be useful when simulating Zniffer output or emulating capture via
-  software.
-- These frames are typically generated only once during startup, configuration,
-  or shutdown.
+- Command Frames provide operational context (port setup, frequency switch,
+  session control).
+- They are logged at startup, during manual actions (via GUI), or CLI session
+  control.
+- Never treated as Z-Wave RF traffic.
+- May help with offline Zniffer trace emulation or debugging tool behavior.
 
 ## Summary
 
-- ZLF Command Frames begin with `0x23`.
-- They define control or configuration commands between Zniffer software and
-  hardware.
-- The payload is short and tightly scoped to a single purpose.
-- No Z-Wave traffic is carried in these frames.
+- Begins with `0x23` and used only for tool control/config.
+- Encapsulates host ↔ capture device commands.
+- Function type determines behavior.
+- Only visible if Zniffer UI explicitly enables all frame types.
+- Useful for understanding capture session state and device setup.

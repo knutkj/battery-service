@@ -1,121 +1,134 @@
-# ZLF Data Frame Specification
+# ZLF Data Frame Specification (Improved)
 
 ## Overview
 
-A **ZLF Data Frame** is a specific type of frame found in `.zlf` files as
-defined in the [ZLF Specification](../zlf.md). The payload of a ZLF frame may
-contain a **Data Frame**, which captures the full Z-Wave RF communication along
-with metadata such as signal quality, channel, region, and network context. This
-document defines the structure and semantics of the **payload** portion of such
-Data Frames.
+A **ZLF Data Frame** is a binary payload type found in `.zlf`/`.zwlf` files that
+encapsulates a full **Z-Wave RF transmission capture**, including metadata about
+RF characteristics and network context. These frames are critical for
+post-analysis of Z-Wave protocol behavior.
 
-> ℹ️ For outer frame structure (timestamp, control byte, length, etc.), refer to
-> the [ZLF Specification](../zlf.md).
+> For the outer structure of a ZLF frame (timestamp, control byte, payload
+> length, etc.), see the [ZLF Format Specification](zlf.md).
 
-## Payload Structure (ZLF Data Frame)
+## Payload Layout
 
-| Field             | Offset | Size         | Description                                  |
-| ----------------- | ------ | ------------ | -------------------------------------------- |
-| **Message Type**  | 0      | 1 byte       | Must be `0x21` (Data Frame identifier).      |
-| **Frame Type**    | 1      | 1 byte       | `0x01` = MAC Data, `0x04` = Beam Start, etc. |
-| **Reserved**      | 2      | 2 bytes      | Always `0x00 0x00`.                          |
-| **Channel/Speed** | 4      | 1 byte       | Encodes both RF channel and data rate.       |
-| **Region**        | 5      | 1 byte       | RF region where capture occurred.            |
-| **RSSI**          | 6      | 1 byte       | Received Signal Strength Indicator.          |
-| **Length Marker** | 7–8    | 2 bytes      | Optional length indicator for sanity check.  |
-| **Z-Wave MPDU**   | 9+     | Variable     | Z-Wave MAC Payload. Includes Home ID, etc.   |
-| **Checksum**      | Tail   | 1 or 2 bytes | Depends on transmission speed.               |
+| Offset | Field         | Size      | Description                                              |
+| ------ | ------------- | --------- | -------------------------------------------------------- |
+| 0      | Message Type  | 1 byte    | Must be `0x21` (identifies a Data Frame)                 |
+| 1      | Frame Type    | 1 byte    | RF frame type: `0x01` = MAC Data, `0x04` = Beam Start    |
+| 2      | Reserved      | 2 bytes   | Always `0x00 0x00`; reserved for alignment               |
+| 4      | Channel/Speed | 1 byte    | Encodes RF channel (bits 7–5) and speed (bits 4–0)       |
+| 5      | Region        | 1 byte    | Captured RF region (e.g., EU, US, ANZ)                   |
+| 6      | RSSI          | 1 byte    | Received Signal Strength Indicator                       |
+| 7      | Length Marker | 2 bytes   | Optional MPDU length for integrity check (little-endian) |
+| 9      | Z-Wave MPDU   | Variable  | Captured Z-Wave MAC frame (starts with Home ID)          |
+| Tail   | Checksum      | 1–2 bytes | 1-byte XOR (≤40 kbps) or 2-byte CRC16 (≥100 kbps/LR)     |
+
+## Field Descriptions
 
 ### Message Type (`0x21`)
 
-- Indicates this payload is a Data Frame.
-- Always the first byte in the payload.
+Constant byte that identifies this payload as a ZLF Data Frame.
 
-### Frame Type
+### Frame Type (Offset 1)
 
-- **0x01:** Standard Z-Wave RF Data Frame (most common).
-- **0x04:** Beam Start Frame (FLiRS devices wakeup indication).
-- **0x05:** Beam Stop Frame.
+Identifies the specific nature of the RF capture:
 
-Other values may exist in future or proprietary use cases.
+| Value  | Meaning    | Notes                        |
+| ------ | ---------- | ---------------------------- |
+| `0x01` | MAC Data   | Standard Z-Wave transmission |
+| `0x04` | Beam Start | FLiRS wakeup indication      |
+| `0x05` | Beam Stop  | FLiRS wakeup end             |
 
-### Channel and Protocol Speed
+Other values are reserved or proprietary.
 
-Derived from byte at offset 4:
+### Channel / Speed (Offset 4)
+
+Encodes both RF channel and protocol speed:
 
 ```ts
-const channel = payload[4] >>> 5;
-const speed = payload[4] & 0b00011111;
+const channel = byte >>> 5;
+const speed = byte & 0x1f;
 ```
 
-| Speed Code | Data Rate        | Notes                  |
-| ---------- | ---------------- | ---------------------- |
-| `0x00`     | 9.6 kbps         | Low-rate legacy frames |
-| `0x01`     | 40 kbps          | Legacy high-rate       |
-| `0x02`     | 100 kbps         | Modern speed           |
-| `0x03`     | Z-Wave LR (100k) | Long range, high power |
+| Speed  | Data Rate | Notes                  |
+| ------ | --------- | ---------------------- |
+| `0x00` | 9.6 kbps  | Legacy                 |
+| `0x01` | 40 kbps   | Improved legacy        |
+| `0x02` | 100 kbps  | Standard Z-Wave Plus   |
+| `0x03` | Z-Wave LR | Long Range, High Power |
 
-Speed value affects checksum type.
+> Determines the **checksum type** used at the end of the frame.
 
-### RF Region
+### Region (Offset 5)
 
-Encoded RF region byte matches configured Zniffer setting (e.g., EU, US, ANZ).
-Not standardized in the payload, usage is implementation-defined.
+Encodes RF region based on Zniffer’s capture settings (not standardized in
+Z-Wave spec):
 
-### RSSI
+- **EU** = 868.42 MHz
+- **US** = 908.42 MHz
+- See INS10249 – Z-Wave Zniffer User Guide for full regional codes.
 
-RSSI value is recorded from the capturing interface:
+### RSSI (Offset 6)
 
-| Value | Meaning                                             |
-| ----- | --------------------------------------------------- |
-| 0–124 | RSSI in dBm (PTI mode) or encoded RSSI (500-series) |
-| 125   | No signal detected                                  |
-| 126   | Receiver saturated                                  |
-| 127   | Not available or error                              |
+Received signal strength, in dBm or encoded units:
 
-- **500-series** Zniffer sticks use 1.5 dB/LSB:
-  `RF_input_dBm ≈ RSSI * 1.5 - 153.5`
-- **PTI-based (700/800)** report native dBm.
+| Value | Meaning                                                 |
+| ----- | ------------------------------------------------------- |
+| 0–124 | Signal strength (PTI = native dBm, 500-series = scaled) |
+| 125   | No signal detected                                      |
+| 126   | Receiver saturated                                      |
+| 127   | Invalid or unavailable                                  |
 
-### Z-Wave MAC Payload (MPDU)
+- For **500-series**:  
+  `RF_dBm ≈ RSSI * 1.5 - 153.5`
+- For **PTI (700/800-series)**: native dBm is used.
 
-Begins at byte offset **9**:
+### Length Marker (Offsets 7–8)
 
-| Field                | Size     | Notes                                       |
-| -------------------- | -------- | ------------------------------------------- |
-| **Home ID**          | 4 bytes  | Unique 32-bit network ID                    |
-| **Source Node**      | 1 byte   | Sending node (originator)                   |
-| **Destination Node** | 1 byte   | Intended recipient (direct or routed)       |
-| **Payload**          | Variable | Protocol layer data including command class |
+- **Type**: Little-endian 16-bit
+- **Usage**: Optional sanity check (not always used)
+- **Contents**: Length of Z-Wave MPDU + checksum
 
-The format closely follows Z-Wave over-the-air MAC format. Zniffer parses it
-using the XML Command Class definitions for further decoding.
+### Z-Wave MPDU (Offset 9+)
 
-### Checksum
+This is the raw captured Z-Wave over-the-air frame, including:
 
-The checksum is located at the end of the payload:
+| Subfield           | Size     | Notes                            |
+| ------------------ | -------- | -------------------------------- |
+| **Home ID**        | 4 bytes  | 32-bit Z-Wave network identifier |
+| **Source Node ID** | 1 byte   | Originating node                 |
+| **Destination ID** | 1 byte   | Target node                      |
+| **Payload**        | Variable | Command Class and application    |
 
-| Speed           | Checksum Type       |
-| --------------- | ------------------- |
-| ≤ 40 kbps       | 1-byte XOR          |
-| ≥ 100 kbps / LR | 2-byte CRC-16-CCITT |
+Zniffer uses its XML Command Class database to decode this content.
 
-It is computed over the Z-Wave MPDU portion only (excluding the Zniffer header).
+### Checksum (Last 1–2 bytes)
 
-### Notes on Frame Routing
+Validates MPDU content integrity:
 
-- Routed frames may show `xx(yy)` notation for nodes: `xx` is current forwarder,
-  `yy` is the originator or final target.
-- This is interpreted by Zniffer UI but not directly encoded in binary.
+| Speed           | Type         | Size |
+| --------------- | ------------ | ---- |
+| ≤ 40 kbps       | XOR checksum | 1    |
+| ≥ 100 kbps / LR | CRC-16-CCITT | 2    |
+
+> Only covers MPDU, not Zniffer-specific metadata.
+
+## Additional Notes
+
+- **Encrypted frames** require manual decryption in Zniffer using S0/S2 keys.
+- **Frame routing info** (e.g., `xx(yy)`) is parsed and shown by Zniffer UI, not
+  present in binary payload.
+- **ZLF Data Frames are not command frames** — see
+  [ZLF Command Frame Spec](zlf-command.md) for control-level messages.
 
 ## Summary
 
-- ZLF Data Frames start with `0x21` and contain full Z-Wave RF packet captures.
-- Metadata includes speed, region, channel, RSSI, and frame type.
-- Z-Wave packet is preserved in its original MAC format with checksum.
-- Parsing requires extracting Zniffer metadata (first 9 bytes) to access MPDU.
-- Use frame type `0x01` for RF data analysis.
-- Decryption (Security/S2) may require external key input if frame is encrypted.
+- Starts with `0x21` message type.
+- Captures Z-Wave RF frames with full MAC-level payload.
+- Includes RF environment metadata: channel, speed, region, RSSI.
+- Ends with speed-dependent checksum.
+- Cross-referenced via timestamp and control byte from outer ZLF frame.
 
 ## See Also
 
