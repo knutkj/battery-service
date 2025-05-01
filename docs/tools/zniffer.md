@@ -91,8 +91,8 @@ which Zniffer **merges into Logical Data Frames (LDFs)**:
   interpretation in the UI
 
 🔗 Refer to the
-[ZLF Logical Data Frame Specification](zlf-logical-data-frame.md) for merging
-rules.
+[ZLF Logical Data Frame Specification](../specs/zlf-logical-data-frame.md) for
+merging rules.
 
 ## ZLF File Format
 
@@ -109,9 +109,10 @@ contain:
 
 ZLF parsing and decoding should follow the frame-level specs:
 
-- [ZLF Specification](zlf.md): Container format.
-- [ZLF Data Frame](zlf-data-frame.md): Actual Z-Wave MAC-layer traffic.
-- [ZLF Command Frame](zlf-command-frame.md): Tool/device instructions (not RF).
+- [ZLF Specification](../specs/zlf.md): Container format.
+- [ZLF Data Frame](../specs/zlf-data-frame.md): Actual Z-Wave MAC-layer traffic.
+- [ZLF Command Frame](../specs/zlf-command-frame.md): Tool/device instructions
+  (not RF).
 
 > Zniffer UI displays only **Logical Data Frames**.
 
@@ -125,4 +126,5 @@ Examples include:
 
 - `SetFrequency`, `Start`, `Stop`
 - `GetVersion`, `GetFrequencyInfo`
-- See [ZLF Command Frame Spec](zlf-command-frame.md) for more information.
+- See [ZLF Command Frame Spec](../specs/zlf-command-frame.md) for more
+  information.
