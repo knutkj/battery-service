@@ -2,40 +2,18 @@
 
 ## Introduction
 
-`ZlfReader` is a utility class for reading and processing `.zlf` (Z-Wave Log
-File) files. It supports structured, efficient, and resilient access to Z-Wave
-sniffed traffic recorded by the Silicon Labs Zniffer tool or compatible systems.
-`ZlfReader` manages file access, parsing state, and recovery metadata in a way
-that enables users to perform controlled reads, seeking, and resumption of work
-across service restarts.
+`ZlfReader` is a low-level, asynchronous utility for reading `.zlf` and `.zwlf`
+binary trace files produced by
+[the Simplicity Studio Z-Wave Zniffer tool](../tools/zniffer.md). It enables
+incremental, frame-accurate access to Z-Wave capture data.
 
-The class operates on the principle of controlled, incremental reading of binary
-data streams, focusing on maintaining file reading correctness over long-running
-operations and interruptions. It supports both static `.zlf` files and files
-that grow over time during active Zniffer sessions.
+The `ZlfReader` provides:
 
-In addition to basic frame extraction capabilities, `ZlfReader` integrates with
-a status tracking system that logs detailed information about read sessions,
-including start and end times, number of frames processed, and final file
-positions. This enables robust recovery strategies and auditable processing
-history.
+- Sequential, resumable access to raw ZLF frames.
+- Integration points for higher-level tooling to perform semantic decoding.
 
-`ZlfReader` is designed for modern asynchronous JavaScript environments, using
-Promise-based patterns and Node.js file system primitives for high performance
-and clean resource management.
-
-### Silicon Labs Z-Wave Zniffer
-
-A development tool for capturing Z-Wave network communications within direct RF
-range and presenting the frames in a graphical user interface. Note that it is a
-**passive listener** that can occasionally miss RF communication even from
-nearby Z-Wave nodes.
-
-### ZLF Trace File Format
-
-For a detailed explanation of the ZLF file structure, fields, frame composition,
-and parsing considerations, refer to the [ZLF Specification](../zlf.md).  
-`ZlfReader` adheres to the structure defined there.
+It is designed for Node.js environments using the native `fs` module and
+`Buffer` APIs.
 
 ## Node.js APIs Used
 
@@ -54,79 +32,83 @@ performance, clarity, and simplicity:
 By relying only on these APIs, `ZlfReader` remains lightweight, efficient, and
 easy to maintain.
 
-## API Overview
+## ZLF Format Overview
 
-`ZlfReader` provides a structured, Promise-based interface for incrementally
-reading frames from `.zlf` files while maintaining file integrity, correct
-positioning, and efficient resource management.
+ZLF files are structured as:
 
-Available methods:
+- 2048-byte static header (must be skipped).
+- Sequence of timestamped frames, each with:
+  - 8-byte Windows FILETIME timestamp.
+  - 1-byte control field (direction + session ID).
+  - 4-byte little-endian payload length.
+  - Payload (Command Frame `0x23`, Data Frame `0x21`, or continuation).
+  - 1-byte trailing marker (ignored).
 
-- **`constructor(filePath: string)`:** Creates a new `ZlfReader` targeting the
-  specified `.zlf` file. Reading is lazy and performed only when needed.
-- **`seek(position: number): Promise<void>`:** Moves the reading cursor to a
-  specific byte offset. Future operations continue from this position.
-- **`continue(): Promise<void>`:** Resumes reading from the last recorded
-  position (persisted in a status file). Falls back to file start if no valid
-  status exists.
-- **`frame(): Promise<Buffer | null>`:** Reads and resolves with the next
-  complete ZLF frame as a `Buffer`. Resolves with `null` if end-of-file is
-  reached.
-- **`frames(count: number): Promise<Buffer[]>`:** Reads up to `count` frames
-  into an array. Resolves early if end-of-file is reached.
-- **`skip(count: number): Promise<number>`:** Skips over the next `count` frames
-  without returning them.
-- **`end(): Promise<void>`:** Safely closes the file stream and releases
-  resources. Idempotent.
+Refer to the full [ZLF Format Specification](zlf.md) for field definitions.
 
-**Note:** All read operations work at **full frame granularity**. No partial or
-raw byte reads are exposed.
+## Frame Types
 
-## Operations
+- **Command Frame (`0x23`)**: Tool/device communication (e.g., Start, Stop,
+  SetFrequency).
+- **Data Frame (`0x21`)**: Captured RF data (Z-Wave MAC frames).
+- **Continuation Frame**: No known type byte; treated as a continuation of the
+  previous Data Frame.
+- **Logical Data Frame (LDF)**: One base Data Frame + zero or more
+  continuations, merged into a complete RF transmission.
 
-An **operation** in `ZlfReader` represents an isolated reading behavior, such as
-reading a frame, skipping frames, or reading multiple frames sequentially.
+## Functional Abstraction: Operation Interface
 
-Operations:
+All frame reading behaviors are encapsulated as operations conforming to a pure
+functional interface:
 
-- Are invoked internally by public methods.
-- Manipulate the file stream and internal receive buffer.
-- Are stateless between invocations but operate on the shared internal buffer.
+```ts
+type ZlfReaderOperation = (args: {
+  stream: ReadStream;
+  buffer: Buffer;
+}) => Promise<{
+  buffer: Buffer;
+  output?: any;
+}>;
+```
 
-### Common Operation Interface
+This interface:
 
-```typescript
-interface ZlfReaderOperation {
-  run(stream: ReadStream, receiveBuffer: Buffer): Promise<OperationResult>;
-}
+- Accepts a stream and current receive buffer.
+- Produces an updated buffer and optional result.
+- Is stateless between invocations.
 
-interface OperationResult {
-  receiveBuffer: Buffer; // updated buffer after operation
-  output?: any; // operation-specific output (e.g., frames read)
+Examples include reading a frame or skipping N frames.
+
+## API Surface
+
+```ts
+class ZlfReader {
+  constructor(filePath: string);
+  seek(position: number): Promise<void>;
+  continue(): Promise<void>;
+  frame(): Promise<Buffer | null>;
+  frames(count: number): Promise<Buffer[]>;
+  skip(count: number): Promise<number>;
+  end(): Promise<void>;
 }
 ```
 
-Operations consume stream chunks, update the receive buffer, and extract results
-without managing file opening/closing or error recovery themselves.
+- `frame()`: Returns next raw ZLF frame (`Buffer`) including timestamp, control,
+  and payload.
+- `continue()`: Restores position from persisted metadata (optional).
+- All methods handle buffer management and chunking transparently.
 
-## Frame Operation
+## Operational Semantics
 
-The **Frame Operation** is responsible for **reading exactly one full ZLF
-frame** from the file:
+All read methods operate at full frame granularity. Partial or mid-payload reads
+are not supported. Internal buffering ensures correctness across chunk
+boundaries. Frames are decoded lazily and only when fully assembled.
 
-1. **Ensure minimum bytes are buffered:** At least 13 bytes (timestamp + control
-   byte + payload length field).
-2. **Parse header fields:** (Timestamp, Control byte, Payload length) — format
-   fully detailed in [ZLF Specification](../zlf.md).
-3. **Calculate complete frame size:** 13 bytes (header) + payload length + 1
-   byte (trailing marker).
-4. **Ensure full frame is buffered:** Fetch additional chunks if necessary.
-5. **Extract and return frame:** When the complete frame is buffered, return it
-   as a `Buffer`, and retain any remaining bytes for the next operation.
+## Compliance
 
-## Summary
+This specification adheres to:
 
-`ZlfReader` is a specialized, incremental, frame-based reader for `.zlf` files
-generated by Silicon Labs Zniffer. It enables robust, efficient reading and
-recovery of Z-Wave sniffed traffic, fully aligned with modern asynchronous
-coding standards and the [ZLF Specification](../zlf.md).
+- [ZLF Format Specification](zlf.md)
+- [ZLF Data Frame Specification](zlf-data-frame.md)
+- [ZLF Command Frame Specification](zlf-command-frame.md)
+- [ZLF Logical Data Frame Specification](zlf-logical-data-frame.md)
