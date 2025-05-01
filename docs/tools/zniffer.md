@@ -12,11 +12,11 @@
 
 We can see an example of three rows in Simplicity Studio Z-Wave Zniffer below:
 
-|   # | Date     | Time         | Speed | RSSI |   C |   Δ |   S | Home       | Data       | Application         | Hex Data                                 |
-| --: | :------- | :----------- | ----: | ---: | --: | --: | --: | :--------- | ---------- | ------------------- | ---------------------------------------- |
-|   1 | 22.03.25 | 14:13:34.339 |   40K |   44 |   1 |   0 |   6 | `C4A815CD` | Singlecast | Basic Set           | `C4A815CD0651010D012001FFCF`             |
-|   2 | 22.03.25 | 14:13:34.348 |   40K |   50 |   1 |   9 |   1 | `C4A815CD` | Ack        |                     | `C4A815CD0113010A0654`                   |
-|   3 | 22.03.25 | 14:13:34.655 |   40K |   45 |   1 | 306 |   6 | `C4A815CD` | Singlecast | Notification Report | `C4A815CD06510213017105000000FF07080088` |
+| Line | Date     | Time         | Speed | RSSI |   C |   Δ |   S | Home       | Data       | Application         | Hex Data                                 |
+| ---: | :------- | :----------- | ----: | ---: | --: | --: | --: | :--------- | ---------- | ------------------- | ---------------------------------------- |
+|    1 | 22.03.25 | 14:13:34.339 |   40K |   44 |   1 |   0 |   6 | `C4A815CD` | Singlecast | Basic Set           | `C4A815CD0651010D012001FFCF`             |
+|    2 | 22.03.25 | 14:13:34.348 |   40K |   50 |   1 |   9 |   1 | `C4A815CD` | Ack        |                     | `C4A815CD0113010A0654`                   |
+|    3 | 22.03.25 | 14:13:34.655 |   40K |   45 |   1 | 306 |   6 | `C4A815CD` | Singlecast | Notification Report | `C4A815CD06510213017105000000FF07080088` |
 
 - Channel (C):
 - Delta (Δ):

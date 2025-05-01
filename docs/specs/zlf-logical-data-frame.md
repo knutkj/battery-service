@@ -2,107 +2,103 @@
 
 ## 1. Purpose
 
-This specification defines how to reconstruct the **logical frames shown as
-single rows** in the Simplicity Studio Z-Wave Zniffer tool from the underlying
-**ZLF physical frames**. Specifically, it describes how the tool merges payloads
-from **multiple ZLF frames**, which appear as one row in the UI.
+This specification defines how to reconstruct **Logical Data Frames (LDFs)**
+from raw `.zlf` files captured by the the Simplicity Studio Z-Wave Zniffer tool.
+Each Logical Data Frame corresponds to a **complete and meaningful payload**, as
+shown in the tool, and is formed by merging a base data frame with its
+continuation frames. The goal is to enable developers to:
 
-The goal is to enable developers to:
-
-- Replicate GUI behavior for automated analysis and trace tooling.
-- Delay parsing until the **full payload** is assembled.
-- Build unit-testable logic with **data-level fidelity** to the GUI.
+- Reconstruct the **same unit of information** shown per row in the Zniffer UI.
+- Ensure that **payload parsing is only attempted** after the full logical frame
+  is assembled.
+- Provide a **robust foundation** for extracting and analyzing Z-Wave
+  protocol-level data from Zniffer traces.
 
 ## 2. Scope
 
-This spec **only covers ZLF frame reassembly prior to payload parsing**. It does
-**not** attempt to decode:
+This spec focuses exclusively on **payload assembly** for Data Frames. It does
+**not** define:
 
-- MAC/PHY headers
-- Application Command Class fields
-- RSSI or metadata fields
+- MAC/PHY-level dissection (see
+  [ZLF Data Frame Specification](zlf-data-frame.md)).
+- Command Class parsing (see Zniffer’s XML decoder or S2/S0 decryption tools).
+- Visualization or GUI decoration (e.g. routing info).
 
-Instead, it defines a layer that produces **merged payloads**, suitable for
-passing into a parser once enough bytes are available.
+## 3. Terminology and Definitions
 
-## 3. Definitions
+| Term                            | Description                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ZLF File**                    | A binary capture file in `.zlf` or `.zwlf` format. See [ZLF Format](zlf.md).                                                                |
+| **ZLF Frame**                   | A unit of binary data within a ZLF file; includes timestamp, type, payload.                                                                 |
+| **ZLF Data Frame**              | A ZLF frame starting with `0x21` (Message Type = Data). See [ZLF Data Frame Spec](zlf-data-frame.md).                                       |
+| **ZLF Data Continuation Frame** | A ZLF frame of type `unknown` (Message Type not known) that extends a preceding Data Frame.                                                 |
+| **ZLF Logical Data Frame**      | A virtual frame built by merging one `data` frame with all its subsequent `unknown` continuation frames. Matches one row in the Zniffer UI. |
 
-| Term                            | Definition                                                                                                                                                   |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **ZLF Frame**                   | A single frame in a `.zlf` file                                                                                                                              |
-| **ZLF Data Frame**              | A ZLF frame which can be identified as a frame of type data from the payload                                                                                 |
-| **ZLF Data Continuation Frame** | A ZLF frame that the GUI does **not** show as a separate row, but which **extends the payload** of the preceding frame data frame or data continuation frame |
-| **ZLF Data Logical Frame**      | A virtual frame built by merging a data frame with its continuation frames. Corresponds 1:1 with a row in the GUI                                            |
+> Note: Command Frames (starting with `0x23`) are excluded. See
+> [ZLF Command Frame Spec](zlf-command-frame.md).
 
-## 4. Concatenation Behavior
+## 4. Frame Grouping and Merging Rules
 
-### 4.1 Detection Rules
+### 4.1 Grouping Logic
 
-Start a new **logical frame group** when you see a ZLF frame of type `data`.
-Then, scan forward and:
+A new Logical Data Frame (LDF) starts when a ZLF frame of type `data` is
+encountered (`Message Type = 0x21` at byte 0 of payload).
 
-- Include all **immediately following** ZLF frames of type `unknown`
-- Stop merging when the next frame is **not `unknown`**
+All immediately following `unknown`-type ZLF frames are considered
+**continuation frames** and are included in the LDF.
 
-These `unknown` frames are called **ZLF Data Continuation Frames**. Their
-contents have no standalone meaning; their payload only makes sense **when
-appended** to the payloads of the previous frames.
+Stop collecting continuation frames when the next frame is of any type other
+than `unknown`.
 
-> **No assumptions are made about payload length** — continuation frames may be
-> short or long.
+### 4.2 Merging Behavior
 
-### 4.2 Merging Rules
+For a given group:
 
-Once a group has been formed:
+- **Payload**: Concatenate the `payload` field from each frame in order of
+  appearance.
+- **Timestamp**: Taken from the **last** frame in the group.
+- **Source Frames**: Retain list of original ZLF frames.
 
-- **Payload**: Concatenate all `payload` byte arrays in capture order
-- **Timestamp**: Taken from the **last frame** in the group
-- **Parsing**: Only done _after_ concatenation is complete
-- **Other fields**: Disregarded during this phase
-
-## 5. Examples
-
-### Example 1: Single Continuation Frame
-
-| #   | Timestamp    | Type    | Payload (hex)                                |
-| --- | ------------ | ------- | -------------------------------------------- |
-| 12  | 14:13:34,337 | data    | `2101000021002C21030DC4A815CD0651010D012001` |
-| 13  | 14:13:34,339 | unknown | `FFCF`                                       |
-
-→ GUI shows one row with hex data: `C4A815CD0651010D012001FFCF`
-
-- Frame 12 is a `data` frame → start a group
-- Frame 13 is `unknown` → continuation
-- Merge payloads: GUI extracts from home ID onward
-- Timestamp: from frame 13
-
-### Example 2: Multiple Continuation Frames
-
-| #   | Timestamp    | Type    | Payload (hex)                                    |
-| --- | ------------ | ------- | ------------------------------------------------ |
-| 20  | 14:13:37,182 | data    | `21`                                             |
-| 21  | 14:13:37,184 | unknown | `01000002002A21030FC4A815CD0A41010F013003FF0C87` |
-| 22  | 14:13:37,185 | unknown | `F3`                                             |
-
-→ GUI shows one row with timestamp = frame 22
-
-- Frame 20 is a `data` frame → group start
-- Frames 21 and 22 are `unknown` → merged
-- Concatenated payload:  
-  `21 01000002002A21030FC4A815CD0A41010F013003FF0C87 F3`
-- Timestamp from frame 22
-
-### 6. Output Format
-
-After post-processing, each logical frame includes:
+## 5. Output Interface
 
 ```ts
 interface ZlfLogicalDataFrame {
-  readonly payload: Buffer; // merged payload
-  readonly timestamp: Date; // from last frame in group
-  readonly sourceFrames: readonly ZlfFrame[]; // for debugging/reference
+  readonly payload: Buffer; // Merged payload (MPDU + checksum)
+  readonly timestamp: Date; // Taken from last frame in group
+  readonly sourceFrames: readonly ZlfFrame[]; // Ordered list of frames merged
 }
 ```
 
-No parsing is performed at this stage. The output is meant to be passed to the
-payload parser once the frame is complete.
+Parsing the application payload (e.g., Command Classes) should occur _after_
+this logical reassembly.
+
+## 6. Extraction Examples
+
+### Example 1: Single Continuation
+
+| #   | Type    | Payload (hex)                                |
+| --- | ------- | -------------------------------------------- |
+| 12  | data    | `2101000021002C21030DC4A815CD0651010D012001` |
+| 13  | unknown | `FFCF`                                       |
+
+→ `payload = 2101000021002C21030DC4A815CD0651010D012001FFCF`  
+→ `timestamp = frame 13`
+
+### Example 2: Multiple Continuations
+
+| #   | Type    | Payload (hex)                                    |
+| --- | ------- | ------------------------------------------------ |
+| 20  | data    | `21`                                             |
+| 21  | unknown | `01000002002A21030FC4A815CD0A41010F013003FF0C87` |
+| 22  | unknown | `F3`                                             |
+
+→ `payload = 2101000002002A21030FC4A815CD0A41010F013003FF0C87F3`  
+→ `timestamp = frame 22`
+
+## 7. References
+
+- [Z-Wave Log File Format (ZLF) Specification](zlf.md)
+- [ZLF Data Frame Specification](zlf-data-frame.md)
+- [ZLF Command Frame Specification](zlf-command-frame.md)
+- [Simplicity Studio Z-Wave Zniffer](../tools/zniffer.md)
+- [INS10249 – Z-Wave Zniffer User Guide]
