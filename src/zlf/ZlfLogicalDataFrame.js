@@ -77,7 +77,7 @@ export default class ZlfLogicalDataFrame {
    */
   get homeId() {
     return (this._parsed.homeId ||= this.payload
-      .slice(10, 14)
+      .subarray(10, 14)
       .toString("hex")
       .toUpperCase());
   }
