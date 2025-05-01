@@ -1,126 +1,73 @@
-// client.js
 import fs from "fs";
-import ZlfReadFrameOperation from "./src/zlf/ZlfReadFrameOperation.js";
-import ZlfFrame from "./src/zlf/ZlfFrame.js";
-import ZlfDataFrame from "./src/zlf/ZlfDataFrame.js";
+import readZlfLogicalDataFrame from "./src/zlf/readZlfLogicalDataFrame.js";
+
+const HEADER_SIZE = 2048;
+const MAX_LDFS = 5;
+const EPOCH_DIFF = 621355968000000000n;
+const TICKS_PER_MS = 10000n;
+const FRAME_HEADER_SIZE = 13;
+
+/** Convert a 64-bit Windows FILETIME timestamp to JS Date. */
+function filetimeToDate(filetimeTicks) {
+  const clean = filetimeTicks & ((1n << 62n) - 1n);
+  const ms = Number((clean - EPOCH_DIFF) / TICKS_PER_MS);
+  return new Date(ms);
+}
 
 async function main() {
-  const filePath = "log.zlf";
-  // Skip the 2048-byte header by starting the stream at byte offset 2048
-  const stream = fs.createReadStream(filePath, { start: 2048 });
-  const op = new ZlfReadFrameOperation();
-  let receiveBuffer = Buffer.alloc(0);
+  const stream = fs.createReadStream("log.zlf", { start: HEADER_SIZE });
+  let buffer = Buffer.alloc(0);
+  const ldfs = [];
 
-  try {
-    // Read exactly one full recognizable message.
-    let buffer = null;
-    let time = "849";
-    const predicate = predicateFactory(time);
-    do {
-      console.log("Reading chunk ...");
-      const res = await op.run(stream, receiveBuffer);
-      receiveBuffer = res.receiveBuffer;
-      buffer = res.output;
-    } while (predicate(buffer));
+  const timeOpts = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+    hour12: false,
+  };
 
-    if (buffer) {
-      console.log("Read one ZLF message (hex):");
-      console.log(buffer.toString("hex"));
-      const frame = ZlfFrame.fromBuffer(buffer);
-      console.log(frame);
-      console.log(frame.payload.toString("hex"));
-      console.log(ZlfDataFrame.fromFrame(frame));
-    } else {
-      console.log("No complete message available in log.zlf");
-    }
-  } finally {
-    // Clean up
-    stream.destroy();
+  while (ldfs.length < MAX_LDFS) {
+    const { buffer: newBuf, output } = await readZlfLogicalDataFrame({
+      stream,
+      buffer,
+    });
+    buffer = newBuf;
+    if (!output) break;
+
+    const lastFrame = output[output.length - 1];
+    const timestamp = lastFrame.readBigUInt64LE(0);
+    const date = filetimeToDate(timestamp);
+
+    const totalPayload = Buffer.concat(
+      output.map((f) => f.subarray(FRAME_HEADER_SIZE, f.length - 1)),
+    );
+
+    ldfs.push({
+      index: ldfs.length + 1,
+      timestamp: date.toLocaleString("no", timeOpts),
+      parts: output.length,
+      length: totalPayload.length,
+      hex: totalPayload.toString("hex"),
+    });
   }
+
+  const header = "| # | Timestamp | Parts | Length | Payload (hex) |";
+  const divider =
+    "|-:|---------------------|------:|--------:|:-----------------|";
+  const rows = ldfs.map(
+    (ldf) =>
+      `| ${ldf.index} | ${ldf.timestamp} | ${ldf.parts} | ${ldf.length} | \`${ldf.hex}\` |`,
+  );
+
+  fs.writeFileSync("log.md", [header, divider, ...rows].join("\n"));
+  console.log(`Wrote ${ldfs.length} logical data frames to log.md`);
 }
 
 main().catch((err) => {
-  console.error("Error reading message:", err);
+  console.error("Fatal error:", err);
   process.exit(1);
 });
-
-function predicateFactory(time) {
-  console.log(`Will skip data frames until with time "${time}".`);
-  return function predicate(buffer) {
-    if (!isDataFrame(buffer)) {
-      console.log("Skipping since not a data frame.");
-      return true;
-    }
-
-    if (time) {
-      const curTime = ZlfFrame.fromBuffer(buffer).timestamp.toISOString();
-      const match = curTime.indexOf(time) !== -1;
-      console.log({ curTime, time, match });
-      if (!match) {
-        console.log(`Skipping data frame with time "${curTime}".`);
-        return true;
-      }
-    }
-
-    return false;
-  };
-}
-
-/**
- * Identifies the command type from a Command frame payload.
- *
- * @param {Buffer} payload - The payload extracted from a ZLF frame.
- * @returns {string | null} - The identified command type or null if not
- *   applicable.
- */
-export function identifyCommandType(payload) {
-  if (!payload || payload.length < 2) {
-    return null;
-  }
-
-  const commandType = payload[1];
-
-  switch (commandType) {
-    case 0x01:
-      return "GetVersion";
-    case 0x02:
-      return "SetFrequency";
-    case 0x03:
-      return "GetFrequencies";
-    case 0x04:
-      return "Start";
-    case 0x05:
-      return "Stop";
-    case 0x06:
-      return "SetLRChannelConfig";
-    case 0x07:
-      return "GetLRChannelConfigs";
-    case 0x08:
-      return "GetLRRegions";
-    case 0x0e:
-      return "SetBaudRate";
-    case 0x13:
-      return "GetFrequencyInfo";
-    case 0x14:
-      return "GetLRChannelConfigInfo";
-    default:
-      return "UnknownCommand";
-  }
-}
-
-/**
- * Checks if the given ZLF frame buffer contains a Data frame.
- *
- * @param {Buffer} frameBuffer - The complete ZLF frame buffer.
- * @returns {boolean} - True if the frame is of type Data, false otherwise.
- */
-export function isDataFrame(frameBuffer) {
-  if (!frameBuffer || frameBuffer.length < 14) {
-    return false;
-  }
-
-  // Frame header is 13 bytes: [8-byte timestamp][1-byte control][4-byte payload length]
-  // Payload starts immediately after the header
-  const payloadType = frameBuffer[13];
-  return payloadType === 0x21;
-}
