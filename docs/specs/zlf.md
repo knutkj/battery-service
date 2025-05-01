@@ -1,128 +1,158 @@
-# Z-Wave Log File (ZLF) Specification
+# Z-Wave Log File Format (ZLF) Specification
 
-## Overview
+## 1. Overview
 
-The **ZLF (Z-Wave Log File)** format is a binary recording format used by
-[the Silicon Labs Zniffer tool](../tools/zniffer.md) to store passively captured
-Z-Wave RF traffic. The file consists of a fixed-size header followed by a
-sequence of frames. Each frame encapsulates a single RF capture event with
-timestamp, direction, session ID, and payload data. ZLF and ZWLF file extensions
-represent the same format.
+The **ZLF** (Z-Wave Log File) format is a **binary trace format** used by
+Silicon Labs' **Zniffer** tool to record captured Z-Wave RF communication. Each
+`.zlf` or `.zwlf` file contains:
+
+- A fixed-size metadata header (2048 bytes).
+- A sequential stream of timestamped frames, each encapsulating one capture
+  event.
+- Two main payload types:
+  - **Command Frames** (`0x23`) – control messages from host to capture
+    hardware.
+  - **Data Frames** (`0x21`) – RF-captured Z-Wave frames.
+- Optionally, **continuation frames** used to reconstruct large **Logical Data
+  Frames (LDFs)**.
+
+## 2. File Structure
 
 ```plaintext
-+-----------------------------+
-| 2048 bytes header (static)  |
-+-----------------------------+
-| Frame 0                     |
-| Frame 1                     |
-| Frame 2                     |
-| ...                         |
-+-----------------------------+
++------------------------------+
+| 2048-byte Header             |
++------------------------------+
+| Frame 0                      |
+| Frame 1                      |
+| Frame 2                      |
+| ...                          |
++------------------------------+
 ```
 
-## 1. Header Section
+### 2.1 Header (2048 bytes)
 
-- **Size:** 2048 bytes (fixed).
-- **Contents:** Session metadata (Zniffer tool version, firmware version, RF
-  region, controller and port details, timestamps, frequency, trace comments,
-  etc.).
-- **Parsing:** Application-specific; frame readers **MUST skip** the first 2048
-  bytes without processing.
+- **Static size**: Always 2048 bytes.
+- **Contains**: Zniffer version, firmware version, controller details,
+  frequency, region, timestamps, user comments.
+- **Action**: **Must be skipped** by all parsers. Not decoded at runtime.
 
-## 2. Frame Section
+## 3. Frame Structure
 
-Each frame records exactly one Z-Wave RF capture event.
+Each frame has the following outer structure:
 
-| Field               | Size    | Description                          |
-| :------------------ | :------ | :----------------------------------- |
-| **Timestamp**       | 8 bytes | Windows FILETIME.                    |
-| **Control**         | 1 byte  | Direction and session id.            |
-| **Payload Length**  | 4 bytes | Number of bytes in the payload.      |
-| **Payload**         | N bytes | Capture metadata and Z-Wave RF data. |
-| **Trailing Marker** | 1 byte  | Reserved; Read but ignored.          |
+| Field           | Size    | Description                              |
+| --------------- | ------- | ---------------------------------------- |
+| Timestamp       | 8 bytes | Windows FILETIME (mask upper 2 bits)     |
+| Control Byte    | 1 byte  | Bit 7 = Direction, Bits 0–6 = Session ID |
+| Payload Length  | 4 bytes | LE32 encoded payload length              |
+| Payload         | N bytes | Typed content: Command or Data frame     |
+| Trailing Marker | 1 byte  | Reserved; read and ignored               |
 
-### Timestamp
+### Timestamp Details
 
-- **Format:** 64-bit unsigned integer (FILETIME standard).
-- **Conversion:**
-  - Mask to 62 bits: `(ticks & ((1n << 62n) - 1n))`
-  - Subtract FILETIME epoch offset: `621355968000000000n`
-  - Divide by `10000n` to get milliseconds since Unix epoch (1970-01-01 UTC).
-- **Notes:** Upper two bits may encode non-time information; **masking is
-  mandatory** before timestamp conversion.
+- **Format**: Windows FILETIME (64-bit ticks since 1601-01-01 UTC).
+- **Conversion**:
+  ```ts
+  unixMillis =
+    ((timestamp & ((1n << 62n) - 1n)) - 621355968000000000n) / 10000n;
+  ```
+- **Reason for Masking**: Upper bits may carry non-time metadata.
 
 ### Control Byte
 
-- **Bit 7:** Direction:
-  - `0` = Frame captured as incoming from RF.
-  - `1` = Frame captured as outgoing from local controller.
-- **Bits 0–6:** Session ID:
-  - Used for differentiating logical capture streams.
-  - Typically `0` for single-session captures.
+| Bit | Meaning                                   |
+| --- | ----------------------------------------- |
+| 7   | Direction: `0` = incoming, `1` = outgoing |
+| 0–6 | Logical session ID                        |
 
-### Payload Length
+## 4. Payload Types
 
-- **Endianness:** Little-endian (LE32).
-- **Meaning:** Exact size of payload bytes immediately following the length
-  field.
+### 4.1 Command Frame (`payload[0] == 0x23`)
 
-### Payload
+**Purpose**: Configuration and status communication with Zniffer hardware.
 
-- **Content:** Binary blob structured by frame type:
-  - Command Frame (controller traffic)
-  - Data Frame (captured Z-Wave packet)
-- **Interpretation:** See [ZLF Command Frame](zlf-command.md) and
-  [ZLF Data Frame](zlf-data.md) for payload decoding.
+| Offset | Field         | Size    | Description                     |
+| ------ | ------------- | ------- | ------------------------------- |
+| 0      | Message Type  | 1 byte  | Always `0x23`                   |
+| 1      | Function Type | 1 byte  | Command type (e.g. Start, Stop) |
+| 2      | Length        | 1 byte  | Length of following payload     |
+| 3+     | Payload       | N bytes | Function-specific arguments     |
 
-### Trailing Marker
+**Known Commands**:
 
-- **Usage:** 1 byte read after the payload.
-- **Typical Value:** `0x00`.
-- **Action:** Always read, but **no semantic meaning** defined.  
-  **Ignored** during payload extraction.
+- `0x01`: `GetVersion`
+- `0x02`: `SetFrequency`
+- `0x04`: `Start`
+- `0x05`: `Stop`
+- `0x0E`: `SetBaudRate`
+- `0x13`: `GetFrequencyInfo`
 
-## 3. Frame Types
+Command frames are not RF traffic and are hidden in the
+[Simplicity Studio Z-Wave Zniffer](../tools/zniffer.md).
 
-There are two principal ZLF payload types:
+### 4.2 Data Frame (`payload[0] == 0x21`)
 
-1. **ZLF Command Frame**: Host ↔ controller communication (e.g., serial
-   commands)
-2. **ZLF Data Frame**: RF capture from Z-Wave network (contains physical +
-   protocol layer info)
+**Purpose**: Represents a captured Z-Wave RF transmission.
 
-See respective specs for format and field decoding.
+| Offset | Field         | Size      | Description                                  |
+| ------ | ------------- | --------- | -------------------------------------------- |
+| 0      | Message Type  | 1 byte    | Always `0x21`                                |
+| 1      | Frame Type    | 1 byte    | `0x01`=MAC Data, `0x04`=Beam Start, etc.     |
+| 2      | Reserved      | 2 bytes   | `0x0000`                                     |
+| 4      | Channel/Speed | 1 byte    | Upper 3 bits: RF Channel; Lower 5: Data Rate |
+| 5      | Region        | 1 byte    | RF Region (e.g. EU, US)                      |
+| 6      | RSSI          | 1 byte    | Signal strength                              |
+| 7–8    | Length Marker | 2 bytes   | Expected MPDU+checksum length                |
+| 9+     | Z-Wave MPDU   | variable  | Actual over-the-air packet incl. Home ID     |
+| Tail   | Checksum      | 1–2 bytes | XOR or CRC16 depending on speed              |
 
-## Reading Frames (Processing Logic)
+**Checksum Type**:
 
-1. **Skip 2048-byte header.**
-2. **Read frame header:**
-   - 8 bytes timestamp.
-   - 1 byte control.
-   - 4 bytes payload length.
-3. **Read payload:** N bytes (payload length from step 2).
-4. **Read trailing marker:** 1 byte.
-5. **Frame complete.** Repeat for next frame.
+- `≤40 kbps`: XOR (1 byte)
+- `≥100 kbps` / LR: CRC-16-CCITT (2 bytes)
 
-## Guarantees
+---
 
-- Frame boundaries are deterministic based on payload length.
-- No additional file-level markers exist between frames.
-- Frames are self-contained: no external synchronization needed if file is read
-  sequentially.
+## 5. Logical Data Frames (LDFs)
 
-## Versioning and Compatibility
+**Motivation**: Large or chunked RF transmissions may span multiple ZLF frames.
 
-- Zniffer logs are forward-compatible where older tools may ignore newer fields.
-- ZLF, ZWLF are structurally equivalent.
-- Older formats (.ZBF, .ZNF) require file converter tool bundled with Zniffer.
+### Construction Rules
 
-## See
+1. **Start**: Frame with `payload[0] == 0x21` (ZLF Data Frame).
+2. **Continuation**: Frames that follow immediately with unknown `payload[0]`.
+3. **End**: When another known frame type (`0x21` or `0x23`) is found.
 
-- **[ZLF Command Frame](zlf-command.md):** Structure of controller-originating
-  command payloads.
-- **[ZLF Data Frame](zlf-data.md):** Structure of RF-captured Z-Wave frame
-  payloads.
-- **[ZlfReader](ZlfReader.md):** Utility class for reading ZLF frame-by-frame
-  asynchronously.
-- **INS10249 – Z-Wave Zniffer User Guide:** Comprehensive technical manual for
-  the Zniffer tool, GUI and trace handling.
+### Merging Logic
+
+```ts
+ldfPayload = Buffer.concat([f0.payload, f1.payload, ..., fn.payload]);
+ldfTimestamp = fn.timestamp;
+controlByte = f0.control;
+```
+
+- Use timestamp of **last** frame in the group.
+- Use **first** frame's control byte to infer direction/session.
+- Validate checksum **after** merging.
+
+## 6. Implementation Guidelines
+
+- Always parse with support for **continuation frames**.
+- Discard command frames during RF traffic analysis unless debugging setup.
+- Validate checksum post-assembly.
+- To reconstruct semantic meaning (Command Class decoding), defer decoding until
+  LDF reassembly.
+
+## 7. Compatibility
+
+- `.zlf` and `.zwlf` files are equivalent in structure.
+- Old formats (`.zbf`, `.znf`) require conversion tools.
+- Logs are forward-compatible: unknown frame types should be skipped gracefully.
+
+## 8. References
+
+- [ZLF Command Frame Specification](zlf-command-frame.md)
+- [ZLF Data Frame Specification](zlf-data-frame.md)
+- [ZLF Logical Data Frame Specification](zlf-logical-data-frame.md)
+- [INS10249 – Zniffer User Guide](https://www.silabs.com/documents/public/user-guides/INS10249-Z-Wave-Zniffer-User-Guide.pdf)
+- [Simplicity Studio Z-Wave Zniffer](../tools/zniffer.md)
