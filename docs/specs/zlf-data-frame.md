@@ -1,4 +1,4 @@
-# ZLF Data Frame Specification (Improved)
+# ZLF Data Frame Specification
 
 ## Overview
 
