@@ -71,15 +71,34 @@ export default class ZlfLogicalDataFrame {
   }
 
   /**
+   * Frame type from byte 1 of the payload (RF subtype).
+   *
+   * @returns {string}
+   */
+  get frameType() {
+    return (this._parsed.frameType ||= frameType(this.payload[1]));
+  }
+
+  /**
    * Home ID (bytes 10–13), as uppercase hex string.
    *
    * @returns {string}
    */
   get homeId() {
     return (this._parsed.homeId ||= this.payload
-      .slice(10, 14)
+      .subarray(10, 14)
       .toString("hex")
       .toUpperCase());
+  }
+
+  /**
+   * MPDU Length (offset 9): Number of bytes in the MPDU, excluding header and
+   * checksum.
+   *
+   * @returns {number}
+   */
+  get mpduLength() {
+    return (this._parsed.mpduLength ||= this.payload[9]);
   }
 
   /**
@@ -119,15 +138,6 @@ export default class ZlfLogicalDataFrame {
   }
 
   /**
-   * All frames contributing to this logical frame.
-   *
-   * @returns {ZlfFrame[]}
-   */
-  get sourceFrames() {
-    return this._frames;
-  }
-
-  /**
    * Speed (decoded from byte 4).
    *
    * @returns {string}
@@ -142,7 +152,7 @@ export default class ZlfLogicalDataFrame {
    * @returns {string}
    */
   get type() {
-    return "ldf";
+    return "LDF";
   }
 
   /**
@@ -174,16 +184,6 @@ export default class ZlfLogicalDataFrame {
 }
 
 /**
- * Concatenates payloads from all source ZlfFrames.
- *
- * @param {ZlfFrame[]} frames
- * @returns {Buffer}
- */
-export function payload(frames) {
-  return Buffer.concat(frames.map((f) => f.payload));
-}
-
-/**
  * Extracts RF channel from channel/speed byte (bits 7–5).
  *
  * @param {number} byte
@@ -194,13 +194,34 @@ export function channel(byte) {
 }
 
 /**
- * Extracts speed code from channel/speed byte (bits 4–0).
+ * Maps the RF frame type byte (offset 1) to a string label.
  *
  * @param {number} byte
- * @returns {number}
+ * @returns {string}
  */
-export function speedCode(byte) {
-  return byte & 0x1f;
+export function frameType(byte) {
+  switch (byte) {
+    case 0x01:
+      return "Data";
+    case 0x02:
+      return "BeamFrame";
+    case 0x04:
+      return "BeamStart";
+    case 0x05:
+      return "BeamStop";
+    default:
+      return "Unknown";
+  }
+}
+
+/**
+ * Concatenates payloads from all source ZlfFrames.
+ *
+ * @param {ZlfFrame[]} frames
+ * @returns {Buffer}
+ */
+export function payload(frames) {
+  return Buffer.concat(frames.map((f) => f.payload));
 }
 
 /**
@@ -222,4 +243,14 @@ export function speed(code) {
     default:
       return "";
   }
+}
+
+/**
+ * Extracts speed code from channel/speed byte (bits 4–0).
+ *
+ * @param {number} byte
+ * @returns {number}
+ */
+export function speedCode(byte) {
+  return byte & 0x1f;
 }

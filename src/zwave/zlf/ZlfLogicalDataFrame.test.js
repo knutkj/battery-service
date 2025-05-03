@@ -2,8 +2,8 @@ import assert from "node:assert";
 import { describe, test } from "node:test";
 import ZlfLogicalDataFrame from "./ZlfLogicalDataFrame.js";
 
-describe("ZlfDataFrame", () => {
-  describe("fromFrame", () => {
+describe("ZlfLogicalDataFrame", () => {
+  describe("constructor", () => {
     test("Parses correctly #1.", () => {
       const hexFrame =
         "41f1d75c4369dd8801170000002101000002003221030dc4a815cd0141040d0a8408ec85fe";

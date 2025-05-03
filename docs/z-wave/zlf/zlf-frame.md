@@ -8,8 +8,6 @@
 
 That PDF is the only official place Silicon Labs documents these fields.
 
----
-
 ## Column-by-column origin map
 
 | Column (Zniffer GUI)                 | Where the value ultimately comes from                                                                                           | Part of ZLF frame header? | Inside ZLF payload?   |
@@ -38,10 +36,6 @@ That PDF is the only official place Silicon Labs documents these fields.
 
 With the user-guide PDF above you can see exact byte layouts and value ranges if
 you need to pull Speed/RSSI/Channel out of the payload programmatically.
-
-✅ I read all your provided code carefully.  
-Here’s a **summary of what we can now infer about the ZLF payload structure**
-based on it:
 
 ## Inferred ZLF Frame Payload Specification
 
