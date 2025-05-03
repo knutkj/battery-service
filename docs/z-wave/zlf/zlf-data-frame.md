@@ -15,10 +15,9 @@ Each ZLF Data Frame consists of three parts:
 
 1. **ZLF Frame Header** – Metadata about the RF environment and basic frame
    properties
-2. **Z-Wave MPDU** – The raw captured over-the-air MAC-layer frame
-3. **Checksum** – Integrity check over the MPDU
+2. \*\*\*\* – The raw captured over-the-air MAC-layer frame
 
-### ZLF Frame Header
+## ZLF Frame Header
 
 | Offset | Size    | Field           | Description                                                                |
 | -----: | ------- | --------------- | -------------------------------------------------------------------------- |
@@ -29,22 +28,49 @@ Each ZLF Data Frame consists of three parts:
 |      5 | 1 byte  | Region          | RF region code (Zniffer-specific; e.g., EU, US)                            |
 |      6 | 1 byte  | RSSI            | Received Signal Strength Indicator                                         |
 |      7 | 2 bytes | Length Marker   | Optional; little-endian 16-bit value = MPDU length + checksum length       |
+|      9 | 1 byte  | MPDU Length     | Number of bytes in the MPDU (not including header or checksum)             |
 
-### Z-Wave MPDU
+## Z-Wave MAC Protocol Data Unit (MPDU)
 
-The MPDU is the core over-the-air MAC-layer transmission, starting at offset 9
-and ending before the checksum.
+### MAC Header (MHR)
 
-| Offset | Size     | Field               | Description                                                    |
-| -----: | -------- | ------------------- | -------------------------------------------------------------- |
-|      9 | 1 byte   | MPDU Length         | Number of bytes in the MPDU (not including header or checksum) |
-|     10 | 4 bytes  | Home ID             | 32-bit Z-Wave network identifier                               |
-|     14 | 1 byte   | Source Node ID      | Originating node identifier                                    |
-|     15 | 1 byte   | Frame Control (LSB) | Low byte of 16-bit MAC Frame Control field                     |
-|     16 | 1 byte   | Frame Control (MSB) | High byte of 16-bit MAC Frame Control field                    |
-|     17 | 1 byte   | Payload Length      | Size of application-layer payload (Command Class + parameters) |
-|     18 | 1 byte   | Destination Node ID | Target node identifier                                         |
-|     19 | Variable | Application Payload | Z-Wave Command Class identifier and associated parameters      |
+This section describes the MAC Header portion (MHR) of a . The header precedes
+the payload and FCS and is consistent across all channel configurations,
+including Long Range (LR).
+
+| Offset | Size    | Field               | Description                                                     |
+| -----: | ------- | ------------------- | --------------------------------------------------------------- |
+|      0 | 4 bytes | Home ID             | 32-bit domain identifier (same for all nodes in a network)      |
+|      4 | 2 bytes | Source Node ID      | 12-bit node identifier of the sender; encoded as two bytes      |
+|      6 | 2 bytes | Destination Node ID | 12-bit node identifier of the receiver (0xFFF = broadcast)      |
+|      8 | 1 byte  | Length              | Total length of the MPDU including FCS (Frame Check Sequence)   |
+|      9 | 1 byte  | Frame Control       | Contains control flags (Ack Req, Extend, Header Type, Reserved) |
+|     10 | 1 byte  | Sequence Number     | 8-bit sequence number for retransmission and deduplication      |
+|     11 | 1 byte  | Noise Floor         | Signed RSSI (dBm) measured on the channel when idle             |
+|     12 | 1 byte  | TX Power            | Signed transmit power (dBm) of this frame                       |
+
+**Frame Control Field (1 byte):**
+
+| Bits | Field       | Description                                                 |
+| ---- | ----------- | ----------------------------------------------------------- |
+| 7    | Ack Req     | `1` = Acknowledgment requested; `0` = No acknowledgment     |
+| 6    | Extend      | `1` = Header extension present; `0` = No extension          |
+| 5..3 | Reserved    | Must be transmitted as 0, ignored on reception              |
+| 2..0 | Header Type | `0x1` = Singlecast, `0x3` = Acknowledgment, others reserved |
+
+**Notes:**
+
+- All MPDUs include this header format, regardless of whether they are
+  singlecast, broadcast, or acknowledgment frames.
+- Broadcasts are encoded as `Header Type = 0x1` with
+  `Destination Node ID = 0xFFF`.
+- Header extension support is optional and covered separately in the header
+  extension specification.
+
+---
+
+Would you like the `zlf-data-frame.md` file updated to reflect this corrected
+section?
 
 ### Checksum
 

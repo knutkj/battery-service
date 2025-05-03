@@ -110,6 +110,9 @@ supports:
 - Derived values (`instances`)
 - Code generation for multiple languages
 - Visual exploration via [Web IDE](https://ide.kaitai.io)
+- Reusing types across multiple `.ksy` files using the `imports` field in the
+  `meta` section, making it easy to share common structures between format
+  definitions.
 
 We chose Kaitai because it balances expressiveness and accessibility, and
 because its output is usable across platforms and programming environments.

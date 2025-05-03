@@ -1,8 +1,3 @@
-Alright — let's walk through this carefully and **build exactly the parser you
-need** for this payload.
-
----
-
 ## Your raw payload:
 
 ```
@@ -15,8 +10,6 @@ need** for this payload.
 | :----------- | :----------------------- | :--------------------------------------- |
 | **Prefix**   | `02002b21030b`           | Metadata header that Zniffer adds        |
 | **Hex Data** | `c4a815cd0a03050b01744e` | Actual sniffed Z-Wave RF packet contents |
-
----
 
 ## Observations based on Zniffer tools and payloads
 
@@ -37,8 +30,6 @@ Zniffer adds a **12-byte prefix** to each packet:
   bytes: 32 bits).
 - The rest is probably the beginning of the real **application data**.
 
----
-
 ## Parsing Plan
 
 **1. Parse and strip the first 12 bytes:**
@@ -58,8 +49,6 @@ Zniffer adds a **12-byte prefix** to each packet:
   - Frame type
   - Command Class, etc.
 
----
-
 ## ✨ So: the parser for a `ZlfFrame.payload` should do:
 
 ```plaintext
@@ -70,8 +59,6 @@ Zniffer adds a **12-byte prefix** to each packet:
 2. Remaining bytes:
    - This is the real sniffed Z-Wave RF packet (exactly what devices sent)
 ```
-
----
 
 ## Example Code (Draft)
 
@@ -103,8 +90,6 @@ export class ZlfPayload {
 }
 ```
 
----
-
 ## Example Usage:
 
 ```javascript
@@ -119,8 +104,6 @@ console.log(payload.data.toString("hex")); // c4a815cd0a03050b01744e
 
 ✅ Now `payload.data` is your _actual_ sniffed Z-Wave frame (HomeID + rest).
 
----
-
 # ✅ Summary
 
 | Step | Action                                            |
@@ -128,10 +111,3 @@ console.log(payload.data.toString("hex")); // c4a815cd0a03050b01744e
 | 1    | Read + strip 12-byte prefix                       |
 | 2    | Expose channel, speed, RSSI, delta                |
 | 3    | Real application data = everything after 12 bytes |
-
----
-
-Would you like me to **continue** by parsing the **application data inside
-`payload.data`**, i.e., Home ID, source node ID, destination node ID, command
-class, etc.?  
-(We can build a full parser stack easily from here if you want!) 🚀

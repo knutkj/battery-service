@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Z-Wave Frame Parser</title>
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      .frame-container {
+        border: 1px solid #ccc;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 4px;
+      }
+      .field {
+        margin: 10px 0;
+        padding: 10px;
+        background: #f5f5f5;
+        border-radius: 4px;
+      }
+      .field-name {
+        font-weight: bold;
+        color: #333;
+      }
+      .field-value {
+        font-family: monospace;
+        color: #0066cc;
+      }
+      .field-description {
+        color: #666;
+        font-size: 0.9em;
+        margin-top: 5px;
+      }
+    </style>
+    <script type="module" src="./src/components/zwave-frame.js"></script>
+    <script type="module" src="./src/components/zwave-mpduinput.js"></script>
+  </head>
+  <body>
+    <h1>Z-Wave Frame Parser</h1>
+
+    <div class="input-section">
+      <h3>Enter Frame Hex Data:</h3>
+      <zwave-mpduinput id="mpduInput"></zwave-mpduinput>
+    </div>
+
+    <div class="frame-container">
+      <h2>Byte Layout</h2>
+      <zwave-frame id="byteLayout"></zwave-frame>
+    </div>
+
+    <div class="frame-container" id="frameDisplay">
+      <h2>Frame Structure</h2>
+      <div id="frameFields"></div>
+    </div>
+
+    <script type="module">
+      import Ack12MHR from "./src/zwave/classic/Ack12MHR.js";
+      import { hexToUint8Array } from "./src/zwave/classic/hexUtils.js";
+
+      function displayField(name, value, description) {
+        return `
+          <div class="field">
+            <span class="field-name">${name}:</span>
+            <span class="field-value">${value}</span>
+            <div class="field-description">${description}</div>
+          </div>
+        `;
+      }
+
+      function parseFrame(hexInput) {
+        const frameDisplay = document.getElementById("frameFields");
+
+        try {
+          const buffer = hexToUint8Array(hexInput);
+          const frame = new Ack12MHR(buffer.slice(0, 9));
+
+          // Update the byte layout component
+          document.getElementById("byteLayout").setAttribute("hex", hexInput);
+
+          let html = "";
+
+          html += displayField(
+            "Home ID",
+            "0x" + frame.homeId.toString(16).toUpperCase(),
+            "Network domain identifier (32-bit)",
+          );
+
+          html += displayField(
+            "Source Node ID",
+            frame.sourceNodeId,
+            "Address of the sending node",
+          );
+
+          html += displayField(
+            "Frame Control",
+            `Routed: ${frame.frameControl.routed}
+              Ack: ${frame.frameControl.ack}
+              Low Power: ${frame.frameControl.lowPower}
+              Speed Modified: ${frame.frameControl.speedModified}
+              Header Type: ${frame.frameControl.headerType}
+              Beaming: ${frame.frameControl.beaming}
+              Sequence: ${frame.frameControl.sequenceNumber}`,
+            "Control flags for routing, acknowledgment, and transmission properties",
+          );
+
+          html += displayField(
+            "Length",
+            frame.length,
+            "Total length of the MPDU in bytes",
+          );
+
+          html += displayField(
+            "Destination Node ID",
+            frame.destinationNodeId,
+            "Address of the target node",
+          );
+
+          frameDisplay.innerHTML = html;
+        } catch (err) {
+          frameDisplay.innerHTML = displayField(
+            "Error",
+            err.message,
+            "Please check the input hex data and try again",
+          );
+          document.getElementById("byteLayout").setAttribute("hex", "");
+        }
+      }
+
+      // Listen for zwave-input events from our component
+      document.addEventListener("zwave-input", (e) => {
+        parseFrame(e.detail.hex);
+      });
+
+      // Set initial example value
+      const mpduInput = document.getElementById("mpduInput");
+      mpduInput.setValue("C4A815CD0113010A0654");
+
+      // Trigger initial parse
+      parseFrame("C4A815CD0113010A0654");
+    </script>
+  </body>
+</html>
