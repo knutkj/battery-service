@@ -1,0 +1,97 @@
+meta:
+  id: zlf
+  title: Z-Wave Log File (ZLF)
+  file-extension: [zlf, zwlf]
+  endian: le
+
+seq:
+  - id: header
+    size: 2048
+    doc: 2048-byte metadata header (skip, not parsed)
+  - id: frames
+    type: frame
+    repeat: eos
+    doc: Sequence of timestamped frames
+
+types:
+  frame:
+    seq:
+      - id: timestamp
+        type: u8
+        doc: Windows FILETIME (mask upper 2 bits)
+      - id: control
+        type: u1
+        doc: Bit 7 = Direction, Bits 0-6 = Session ID
+      - id: payload_len
+        type: u4
+        doc: Payload length (LE32)
+      - id: payload
+        size: payload_len
+        type: payload_type
+        doc: Frame payload (Command/Data/Continuation)
+      - id: trailing_marker
+        type: u1
+        doc: Reserved; read and ignored
+
+  payload_type:
+    seq:
+      - id: type_byte
+        type: u1
+      - id: body
+        type:
+          switch-on: type_byte
+          cases:
+            0x23: command_frame
+            0x21: data_frame
+          # Continuation/unknown: leave as raw bytes
+        size-eos: true
+
+  command_frame:
+    doc: ZLF Command Frame (payload[0] == 0x23)
+    seq:
+      - id: msg_type
+        type: u1
+        doc: Always 0x23
+      - id: function_type
+        type: u1
+        doc: Command type (e.g. Start, Stop)
+      - id: length
+        type: u1
+        doc: Length of following payload
+      - id: payload
+        size: length
+        doc: Function-specific arguments
+
+  data_frame:
+    doc: ZLF Data Frame (payload[0] == 0x21)
+    seq:
+      - id: msg_type
+        type: u1
+        doc: Always 0x21
+      - id: frame_type
+        type: u1
+        doc: 0x01=MAC Data, 0x04=Beam Start, etc.
+      - id: reserved
+        type: u2
+        doc: Reserved (0x0000)
+      - id: channel_speed
+        type: u1
+        doc: "Upper 3 bits: RF Channel; Lower 5: Data Rate"
+      - id: region
+        type: u1
+        doc: RF Region (e.g. EU, US)
+      - id: rssi
+        type: u1
+        doc: Signal strength
+      - id: length_marker
+        type: u2
+        doc: Expected MPDU+checksum length
+      - id: mpdu
+        size: "length_marker > 2 ? length_marker - checksum_len : 0"
+        doc: Z-Wave MPDU (variable)
+      - id: checksum
+        size: checksum_len
+        doc: XOR (1 byte) or CRC16 (2 bytes) depending on speed
+    instances:
+      checksum_len:
+        value: "channel_speed & 0x1F >= 20 ? 2 : 1" # 100kbps/LR: 2, else 1
