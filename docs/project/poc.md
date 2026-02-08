@@ -1,97 +1,77 @@
 # Home Automation Battery Monitoring Service (PoC Phase)
 
-This PoC will establish a **working foundation** for a **battery-focused,
-real-time monitoring service** using passive Z-Wave network observation. It will
-emphasize **device discovery**, **user-friendly interaction**, and **battery
-health visibility** — all managed with a **clean local-first architecture**.
+A **battery-focused monitoring service** for Z-Wave networks. The service
+presents battery health, device identity, and network topology to the user.
 
 ## Goal
 
-Develop a **home automation battery monitoring service** focused initially on
-**Z-Wave devices**.  
-The service will make it simple and intuitive to:
+Make it simple and intuitive to:
 
 - Learn when batteries need changing.
 - Detect if devices have stopped responding.
 - Understand device wake-up patterns over time.
-- Monitor overall battery health of the Z-Wave network.
+- Monitor overall battery health of a Z-Wave network.
+
+## Core principle: vendor-independent
+
+The service is **not** tied to any controller vendor, cloud service, or home
+automation platform.
+
+In the first iteration, data is obtained by **passive RF sniffing** — the most
+realistic approach with current hardware options. This is not optimal (battery
+devices sleep, so not all traffic is captured), but it provides a working
+foundation without requiring active network participation.
 
 ## Characteristics
 
-- **Independence:**
-
-  - The service will interface **directly with the Z-Wave network**, without
-    depending on systems like Home Assistant.
-  - It will act as an **independent agent**, assuming a single Z-Wave network
-    for this phase.
-
-- **User Interface:**
-
-  - **Web-based live dashboard** displaying real-time battery statuses.
-  - **Automatic device learning** by reconstructing the device list based on
-    sniffed network traffic.
-  - **User metadata**: Users can add information for each device such as:
-  - Battery type.
-  - Date of last battery change.
-  - Other optional notes.
-
-- **Hardware:**
-
-  - **Primary hardware for PoC**: **ZGM230-DK2603A Development Kit** (zniffer
-    device).
-  - **Mode**: Passive network sniffing — no transmission or reception of regular
-    Z-Wave messages.
-  - **Platform**: Windows OS (initial focus).
-
-- **Data Storage:**
-
-  - **Historical battery data** will be stored in the **local file system**
-    using **raw JSON files**.
-  - **Notification history** will also be stored as local raw files.
-
-- **Notification System:**
-
-  - **In-app notifications** shown in the web interface:
-    - **Low Battery Warning**.
-    - **Missing Device Alert**.
-  - No external integrations (email, SMS, push) during the PoC phase.
-
-- **Network Traffic Processing:**
-
-  - The service will **poll a `.zlf` file** (Z-Wave Log File) to read new
-    network traffic data.
-  - **Goal**: To generically support **all Z-Wave battery-powered devices**.
-
-_Note: Future hardware options are out of scope for this PoC._
-
-## Tech Stack
-
-| Area                 | Technology                  |
-| :------------------- | :-------------------------- |
-| Programming Language | JavaScript (ESM modules)    |
-| Backend Framework    | Express                     |
-| Frontend Framework   | React                       |
-| Z-Wave Interface     | Z-Wave JS library           |
-| Development Platform | Windows                     |
-| Development Tools    | Visual Studio Code, Node.js |
+- **Input:** The service ingests captured Z-Wave network traffic.
+- **Device discovery:** Nodes are discovered from the captured traffic. Device
+  identity (manufacturer, product type, product ID) is extracted automatically
+  when available or entered manually by the user.
+- **Network graph:** Nodes displayed as purpose-built SVG icons with battery
+  indicators. Edges show direct and routed RF links.
+- **Detail panel:** Clicking a node shows product information (from the Z-Wave
+  Alliance Product Catalog), battery level, and user-supplied metadata.
+- **Notifications:** The service alerts the user when a battery needs attention
+  or a device has gone silent — proactively, so that no device ever runs out of
+  power unnoticed. Notification delivery mechanism TBD.
+- **User metadata:** Device location, battery type, last change date, custom
+  name, and notes — editable per device.
+- **Data storage:** The service persists device metadata, battery history, and
+  notification events. Storage mechanism TBD.
+- **Multi-home-ID:** Users may load captures from different Z-Wave networks.
+  Node IDs are scoped to their home ID.
+- **Hardware:** Passive sniffing requires a Zniffer-capable device (e.g.
+  ZGM230-DK2603A Development Kit). The Zniffer observes RF traffic without
+  participating in the network.
 
 ## Deliverables
 
-- Standalone service that reads a `.zlf` file for Z-Wave network traffic.
-- Real-time web dashboard showing:
-  - Battery status per device.
-  - User-added device metadata.
-- Local storage of:
-  - Battery status history (per device).
-  - Notification events.
-- Basic notification system inside the web UI.
-- Robust device auto-discovery via sniffed Z-Wave traffic.
+- Z-Wave traffic parser (frame reassembly, MPDU decoding).
+- Command class decoding: Battery Report, Manufacturer Specific, Wake Up,
+  encapsulation unwrapping (CRC-16, Supervision, Security 2 identification).
+- Network graph with SVG icons, battery indicators, and routing edges.
+- Detail panel with product catalog lookup and user-editable metadata.
+- CLI tools for offline capture analysis.
+- Persistence of user metadata and device ID mappings.
 
-## Out of Scope
+## Out of scope
 
-- Active participation in the Z-Wave network (i.e., sending commands).
-- Support for multiple Z-Wave networks.
-- External notification systems (email, push, etc.).
+- Active participation in the Z-Wave network (sending commands).
 - Cloud storage or cloud services integration.
 - Alternative hardware setups beyond ZGM230-DK2603A.
 - Full-fledged production deployment.
+
+## To be investigated
+
+- **Security 2 decryption.** Most modern Z-Wave devices encrypt traffic with
+  S2 (AES-128-CCM). Without decryption, the service cannot read battery reports
+  from encrypted devices — a significant limitation. Decryption requires the
+  network keys, which must be obtained from the controller. This needs
+  investigation to determine feasibility within the vendor-independent
+  principle.
+
+## Next steps
+
+See [next-steps.md](next-steps.md) for the detailed task breakdown — what has
+been implemented and what remains.
